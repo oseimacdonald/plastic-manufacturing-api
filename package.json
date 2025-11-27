@@ -1,0 +1,29 @@
+{
+  "name": "plastic-manufacturing-api",
+  "version": "1.0.0",
+  "description": "API for injection machine production reporting",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "mongoose": "^7.8.7",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^4.6.3"
+  },
+
+  "engines": {
+    "node": ">=14.0.0"
+  },
+
+  "keywords": [],
+  "author": "Mac-Donald",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
