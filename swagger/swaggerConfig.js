@@ -14,16 +14,16 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
-        description: 'Development server'
+        url: 'https://plastic-manufacturing-api.onrender.com',
+        description: 'Production server'
       },
       {
-        url: 'https://your-app.onrender.com', // We'll update this after deployment
-        description: 'Production server'
+        url: 'http://localhost:3000',
+        description: 'Development server'
       }
     ],
   },
-  apis: ['./routes/*.js'], // Path to the API routes
+  apis: ['./routes/*.js'],
 };
 
 const specs = swaggerJsdoc(options);
