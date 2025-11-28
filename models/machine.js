@@ -10,11 +10,16 @@ const machineSchema = new mongoose.Schema({
     type: String, 
     required: true 
   },
+  model: String,
+  manufacturer: String,
+  tonnage: Number,
+  shotSize: Number,
   status: { 
     type: String, 
     enum: ['operational', 'maintenance', 'down', 'idle'],
     default: 'operational'
-  }
+  },
+  location: String
 }, {
   timestamps: true
 });

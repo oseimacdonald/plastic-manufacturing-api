@@ -19,6 +19,10 @@ const productionRunSchema = new mongoose.Schema({
     type: String, 
     required: true 
   },
+  material: {
+    type: String,
+    required: true
+  },
   targetQty: { 
     type: Number, 
     required: true,
