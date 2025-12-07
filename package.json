@@ -1,29 +1,37 @@
 {
-  "name": "plastic-manufacturing-api",
-  "version": "1.0.0",
-  "description": "API for injection machine production reporting",
-  "main": "app.js",
-  "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js"
-  },
-  "dependencies": {
-    "dotenv": "^16.6.1",
-    "express": "^4.21.2",
-    "mongoose": "^7.8.7",
-    "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^4.6.3"
-  },
+    "name":  "plastic-manufacturing-api",
+    "version":  "1.0.0",
+    "description":  "API for injection machine production reporting",
+    "main":  "app.js",
+    "scripts":  {
+                    "start":  "node app.js",
+                    "dev":  "nodemon app.js",
+                    "test":  "jest",
+                    "test:watch":  "jest --watch --testTimeout=10000",
+                    "test:coverage":  "jest --coverage --testTimeout=10000"
+                },
+    "dependencies":  {
+                         "dotenv":  "^16.6.1",
+                         "express":  "^4.21.2",
+                         "express-session":  "^1.18.2",
+                         "mongoose":  "^7.8.7",
+                         "passport":  "^0.7.0",
+                         "passport-google-oauth20":  "^2.0.0",
+                         "swagger-jsdoc":  "^6.2.8",
+                         "swagger-ui-express":  "^4.6.3"
+                     },
+    "engines":  {
+                    "node":  "\u003e=14.0.0"
+                },
+    "keywords":  [
 
-  "engines": {
-    "node": ">=14.0.0"
-  },
-
-  "keywords": [],
-  "author": "Mac-Donald",
-  "license": "ISC",
-  "type": "commonjs",
-  "devDependencies": {
-    "nodemon": "^3.1.11"
-  }
+                 ],
+    "author":  "Mac-Donald",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "devDependencies":  {
+                            "jest":  "^30.2.0",
+                            "nodemon":  "^3.1.11",
+                            "supertest":  "^7.1.4"
+                        }
 }
