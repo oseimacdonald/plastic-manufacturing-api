@@ -7,49 +7,43 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// -------------------------------------------------------
-// 1. BASIC MIDDLEWARE
-// -------------------------------------------------------
+// -----------------------
+// Middleware
+// -----------------------
 app.use(express.json());
 
-// -------------------------------------------------------
-// 2. DATABASE CONNECTION (skip in tests)
-// -------------------------------------------------------
-if (process.env.NODE_ENV === 'test') {
-  console.log('Test mode: Skipping MongoDB connection');
-} else {
+// -----------------------
+// Database connection
+// -----------------------
+if (process.env.NODE_ENV !== 'test') {
   mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/plastic-manufacturing')
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(err => console.error('❌ MongoDB connection error:', err));
+} else {
+  console.log('⚠️ Test mode: skipping MongoDB connection');
 }
 
-// -------------------------------------------------------
-// 3. LOAD OAUTH BEFORE AUTH ROUTES
-// -------------------------------------------------------
+// -----------------------
+// OAuth Configuration
+// -----------------------
 try {
-  console.log('Loading OAuth configuration...');
   require('./config/oauth')(app);
-  console.log('OAuth configuration loaded successfully');
-} catch (error) {
-  console.warn('OAuth config not found, running without authentication.');
+} catch (err) {
+  console.warn('⚠️ OAuth config not found, running without authentication');
   app.use((req, res, next) => {
     req.isAuthenticated = () => false;
     next();
   });
 }
 
-// -------------------------------------------------------
-// 4. MOCK AUTH IN TEST MODE
-// -------------------------------------------------------
+// -----------------------
+// Mock authentication for tests
+// -----------------------
 if (process.env.NODE_ENV === 'test') {
-  console.log('Test mode: Setting up mock authentication middleware');
   app.use((req, res, next) => {
     if (req.headers['x-test-auth'] === 'true') {
       req.isAuthenticated = () => true;
-      req.user = {
-        displayName: 'Test User',
-        emails: [{ value: 'test@example.com' }]
-      };
+      req.user = { displayName: 'Test User', emails: [{ value: 'test@example.com' }] };
     } else {
       req.isAuthenticated = () => false;
       req.user = null;
@@ -58,14 +52,14 @@ if (process.env.NODE_ENV === 'test') {
   });
 }
 
-// -------------------------------------------------------
-// 5. SWAGGER DOCUMENTATION
-// -------------------------------------------------------
+// -----------------------
+// Swagger Documentation
+// -----------------------
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
-// -------------------------------------------------------
-// 6. ROOT ENDPOINT
-// -------------------------------------------------------
+// -----------------------
+// Home route
+// -----------------------
 app.get('/', (req, res) => {
   res.json({
     message: 'Plastic Manufacturing API - Visit /api-docs for documentation',
@@ -77,88 +71,70 @@ app.get('/', (req, res) => {
       auth: '/auth/google',
       documentation: '/api-docs'
     },
-    authentication: req.isAuthenticated ? (req.isAuthenticated() ? {
+    authentication: req.isAuthenticated?.() ? {
       authenticated: true,
-      user: {
-        displayName: req.user?.displayName,
-        email: req.user?.emails?.[0]?.value
-      }
+      user: req.user
     } : {
       authenticated: false,
       message: 'Visit /auth/google to authenticate'
-    }) : {
-      authenticated: false,
-      message: 'OAuth not configured'
     }
   });
 });
 
-// -------------------------------------------------------
-// 7. AUTH ROUTES (MUST BE LOADED IMMEDIATELY AFTER OAUTH)
-// -------------------------------------------------------
+// -----------------------
+// Routes
+// -----------------------
 try {
-  const authRoutes = require('./routes/auth');
-  app.use('/auth', authRoutes);
-  console.log('Auth routes loaded successfully');
-} catch (error) {
-  console.warn('Auth routes missing:', error.message);
+  app.use('/machines', require('./routes/machines'));
+  app.use('/production-runs', require('./routes/productionRuns'));
+  console.log('✅ Machine and ProductionRun routes loaded');
+} catch (err) {
+  console.warn('⚠️ Machine/ProductionRun routes missing:', err.message);
 }
 
-// -------------------------------------------------------
-// 8. OTHER ROUTES (SAFE TO LOAD AFTER AUTH)
-// -------------------------------------------------------
 try {
-  const machineRoutes = require('./routes/machines');
-  const productionRunRoutes = require('./routes/productionRuns');
-  const employeeRoutes = require('./routes/employees');
-  const qualityCheckRoutes = require('./routes/qualityChecks');
-
-  app.use('/machines', machineRoutes);
-  app.use('/production-runs', productionRunRoutes);
-  app.use('/employees', employeeRoutes);
-  app.use('/quality-checks', qualityCheckRoutes);
-
-  console.log('Machine, Production Run, Employee, and Quality Check routes loaded');
-} catch (error) {
-  console.warn('Error loading routes:', error.message);
+  app.use('/auth', require('./routes/auth'));
+  console.log('✅ Auth routes loaded');
+} catch (err) {
+  console.warn('⚠️ Auth routes missing:', err.message);
 }
 
-// -------------------------------------------------------
-// 9. 404 HANDLER
-// -------------------------------------------------------
+try {
+  app.use('/employees', require('./routes/employees'));
+  app.use('/quality-checks', require('./routes/qualityChecks'));
+  console.log('✅ Employee and QualityCheck routes loaded');
+} catch (err) {
+  console.warn('⚠️ Employee/QualityCheck routes missing:', err.message);
+}
+
+// -----------------------
+// 404 handler
+// -----------------------
 app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
-    availableEndpoints: [
-      '/machines',
-      '/production-runs',
-      '/employees',
-      '/quality-checks',
-      '/auth/google',
-      '/api-docs'
-    ]
+    availableEndpoints: ['/machines', '/production-runs', '/employees', '/quality-checks', '/api-docs']
   });
 });
 
-// -------------------------------------------------------
-// 10. GLOBAL ERROR HANDLER
-// -------------------------------------------------------
+// -----------------------
+// Error handler
+// -----------------------
 app.use((err, req, res, next) => {
-  console.error('Server error:', err.stack);
+  console.error(err.stack);
   res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
-// -------------------------------------------------------
-// 11. START SERVER
-// -------------------------------------------------------
+// -----------------------
+// Start server (skip in test mode)
+// -----------------------
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`API Docs: http://localhost:${PORT}/api-docs`);
-    console.log('OAuth login: /auth/google');
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📄 API docs: http://localhost:${PORT}/api-docs`);
   });
 }
 
