@@ -40,11 +40,15 @@ router.get('/google',
  */
 router.get('/google/callback',
   (req, res, next) => {
-    console.log('🔄 Google callback received');
-    console.log('Query params:', req.query);
+    console.log('=== GOOGLE CALLBACK DEBUG START ===');
     console.log('Session ID:', req.sessionID);
-    console.log('Has code param:', !!req.query.code);
-    console.log('Has error param:', !!req.query.error);
+    console.log('Full URL:', req.originalUrl);
+    console.log('Query params:', JSON.stringify(req.query));
+    console.log('Has code:', !!req.query.code);
+    console.log('Has error:', !!req.query.error);
+    console.log('Has state:', !!req.query.state);
+    console.log('Cookies:', req.headers.cookie);
+    console.log('=== GOOGLE CALLBACK DEBUG END ===');
     next();
   },
   passport.authenticate('google', { 
@@ -52,13 +56,11 @@ router.get('/google/callback',
     failureMessage: true
   }),
   (req, res) => {
-    console.log('✅ Authentication successful');
-    console.log('User ID:', req.user.id);
-    console.log('User email:', req.user.emails?.[0]?.value);
+    console.log('✅ SUCCESS: Authentication completed');
+    console.log('User:', req.user.id, req.user.displayName);
     res.redirect('/auth/success');
   }
 );
-
 /**
  * @swagger
  * /auth/success:
