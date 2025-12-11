@@ -7,49 +7,50 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// -------------------------------------------------------
+// 1. BASIC MIDDLEWARE
+// -------------------------------------------------------
 app.use(express.json());
 
-// Database connection - WITH TEST MODE CHECK
+// -------------------------------------------------------
+// 2. DATABASE CONNECTION (skip in tests)
+// -------------------------------------------------------
 if (process.env.NODE_ENV === 'test') {
   console.log('Test mode: Skipping MongoDB connection');
-  // mongoose.connect will be mocked by jest in tests/setup.js
 } else {
-  // Database connection - only in non-test mode
   mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/plastic-manufacturing')
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB connection error:', err));
 }
 
-// OAuth Configuration (must come before routes)
-// Check if oauth config exists before requiring it
+// -------------------------------------------------------
+// 3. LOAD OAUTH BEFORE AUTH ROUTES
+// -------------------------------------------------------
 try {
+  console.log('Loading OAuth configuration...');
   require('./config/oauth')(app);
-  console.log('OAuth configuration loaded');
+  console.log('OAuth configuration loaded successfully');
 } catch (error) {
-  console.warn('OAuth configuration not found, running without authentication');
-  // Create a dummy isAuthenticated middleware if oauth not configured
+  console.warn('OAuth config not found, running without authentication.');
   app.use((req, res, next) => {
     req.isAuthenticated = () => false;
     next();
   });
 }
 
-// Test authentication support
+// -------------------------------------------------------
+// 4. MOCK AUTH IN TEST MODE
+// -------------------------------------------------------
 if (process.env.NODE_ENV === 'test') {
-  console.log('Test mode: Setting up mock authentication');
-  // Mock authentication middleware for tests
+  console.log('Test mode: Setting up mock authentication middleware');
   app.use((req, res, next) => {
-    // Check for test authentication headers
     if (req.headers['x-test-auth'] === 'true') {
-      // Mock authenticated user for tests
       req.isAuthenticated = () => true;
       req.user = {
         displayName: 'Test User',
         emails: [{ value: 'test@example.com' }]
       };
-    } else if (req.headers['x-test-auth'] === 'false') {
-      // Mock unauthenticated user for tests
+    } else {
       req.isAuthenticated = () => false;
       req.user = null;
     }
@@ -57,12 +58,16 @@ if (process.env.NODE_ENV === 'test') {
   });
 }
 
-// Swagger Documentation
+// -------------------------------------------------------
+// 5. SWAGGER DOCUMENTATION
+// -------------------------------------------------------
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
-// Routes
+// -------------------------------------------------------
+// 6. ROOT ENDPOINT
+// -------------------------------------------------------
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Plastic Manufacturing API - Visit /api-docs for documentation',
     endpoints: {
       machines: '/machines',
@@ -88,72 +93,72 @@ app.get('/', (req, res) => {
   });
 });
 
-// Import routes - wrap in try-catch to handle missing files
-try {
-  const machineRoutes = require('./routes/machines');
-  const productionRunRoutes = require('./routes/productionRuns');
-  app.use('/machines', machineRoutes);
-  app.use('/production-runs', productionRunRoutes);
-  console.log('Machine and Production Run routes loaded');
-} catch (error) {
-  console.error('Error loading routes:', error.message);
-}
-
-// Try to load auth routes if they exist
+// -------------------------------------------------------
+// 7. AUTH ROUTES (MUST BE LOADED IMMEDIATELY AFTER OAUTH)
+// -------------------------------------------------------
 try {
   const authRoutes = require('./routes/auth');
   app.use('/auth', authRoutes);
-  console.log('Auth routes loaded');
+  console.log('Auth routes loaded successfully');
 } catch (error) {
-  console.warn('Auth routes not found, skipping');
+  console.warn('Auth routes missing:', error.message);
 }
 
-// Try to load employee and quality check routes
+// -------------------------------------------------------
+// 8. OTHER ROUTES (SAFE TO LOAD AFTER AUTH)
+// -------------------------------------------------------
 try {
+  const machineRoutes = require('./routes/machines');
+  const productionRunRoutes = require('./routes/productionRuns');
   const employeeRoutes = require('./routes/employees');
   const qualityCheckRoutes = require('./routes/qualityChecks');
-  
-  // Apply routes WITHOUT additional middleware (authentication is in route files)
+
+  app.use('/machines', machineRoutes);
+  app.use('/production-runs', productionRunRoutes);
   app.use('/employees', employeeRoutes);
   app.use('/quality-checks', qualityCheckRoutes);
-  console.log('Employee and Quality Check routes loaded (authentication handled in routes)');
+
+  console.log('Machine, Production Run, Employee, and Quality Check routes loaded');
 } catch (error) {
-  console.warn('Employee/Quality Check routes not found:', error.message);
+  console.warn('Error loading routes:', error.message);
 }
 
-// 404 handler
+// -------------------------------------------------------
+// 9. 404 HANDLER
+// -------------------------------------------------------
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Endpoint not found',
-    availableEndpoints: ['/machines', '/production-runs', '/employees', '/quality-checks', '/api-docs']
+    availableEndpoints: [
+      '/machines',
+      '/production-runs',
+      '/employees',
+      '/quality-checks',
+      '/auth/google',
+      '/api-docs'
+    ]
   });
 });
 
-// Error handling middleware
+// -------------------------------------------------------
+// 10. GLOBAL ERROR HANDLER
+// -------------------------------------------------------
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
-// Start server (skip in test mode)
+// -------------------------------------------------------
+// 11. START SERVER
+// -------------------------------------------------------
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log(`API Documentation available at http://localhost:${PORT}/api-docs`);
-    console.log(`Available endpoints:`);
-    console.log(`  - GET  /              - API information`);
-    console.log(`  - GET  /machines      - List all machines`);
-    console.log(`  - POST /machines      - Create new machine`);
-    console.log(`  - GET  /production-runs - List all production runs`);
-    console.log(`  - POST /production-runs - Create new production run`);
-    console.log(`  - GET  /employees     - List all employees (protected)`);
-    console.log(`  - GET  /quality-checks - List all quality checks (protected)`);
-    console.log(`  - GET  /api-docs      - API documentation`);
-    console.log(`  - GET  /auth/google   - OAuth login`);
-    console.log(`  - GET  /auth/logout   - Logout`);
+    console.log(`API Docs: http://localhost:${PORT}/api-docs`);
+    console.log('OAuth login: /auth/google');
   });
 }
 
