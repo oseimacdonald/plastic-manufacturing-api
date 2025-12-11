@@ -58,9 +58,19 @@ router.get('/google/callback',
   (req, res) => {
     console.log('✅ SUCCESS: Authentication completed');
     console.log('User:', req.user.id, req.user.displayName);
-    res.redirect('/auth/success');
+    
+    // Save session explicitly to ensure persistence
+    req.session.save((err) => {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.redirect('/auth/failure');
+      }
+      console.log('✅ Session saved successfully');
+      res.redirect('/auth/success');
+    });
   }
 );
+
 /**
  * @swagger
  * /auth/success:
@@ -142,19 +152,49 @@ router.get('/failure', (req, res) => {
  *         description: Logout successful
  */
 router.get('/logout', (req, res) => {
-  console.log('👋 Logout requested for session:', req.sessionID);
+  console.log('👋 Logout requested');
+  console.log('Before logout - User:', req.user?.id);
+  console.log('Before logout - Authenticated:', req.isAuthenticated());
+  console.log('Session ID:', req.sessionID);
+  
+  // First, logout using Passport
   req.logout((err) => {
     if (err) {
-      console.error('Logout error:', err);
+      console.error('❌ Passport logout error:', err);
       return res.status(500).json({ 
         error: 'Logout failed',
         details: err.message 
       });
     }
-    req.session.destroy();
-    res.json({
-      message: 'Logout successful',
-      authenticated: false
+    
+    console.log('✅ Passport logout successful');
+    
+    // Then destroy the session
+    req.session.destroy((destroyErr) => {
+      if (destroyErr) {
+        console.error('❌ Session destroy error:', destroyErr);
+        return res.status(500).json({
+          error: 'Session destruction failed',
+          details: destroyErr.message
+        });
+      }
+      
+      console.log('✅ Session destroyed');
+      
+      // Clear the session cookie explicitly
+      res.clearCookie('plastic-manufacturing.sid', {
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none'
+      });
+      
+      res.json({
+        message: 'Logout successful',
+        authenticated: false,
+        sessionDestroyed: true,
+        timestamp: new Date().toISOString()
+      });
     });
   });
 });
@@ -209,7 +249,8 @@ router.get('/debug', (req, res) => {
     sessionId: req.sessionID,
     sessionExists: !!req.session,
     cookies: req.headers.cookie ? 'Present' : 'Missing',
-    userAgent: req.get('user-agent')
+    userAgent: req.get('user-agent'),
+    authenticated: req.isAuthenticated()
   };
   
   console.log('🔧 Debug info:', config);
@@ -217,7 +258,7 @@ router.get('/debug', (req, res) => {
 });
 
 // ============================================
-// NEW DEBUG ROUTES
+// IMPROVED DEBUG & TEST ROUTES
 // ============================================
 
 /**
@@ -228,7 +269,6 @@ router.get('/debug', (req, res) => {
  *     tags: [Authentication]
  */
 router.get('/debug-swagger-flow', (req, res) => {
-  // URL that Swagger would generate
   const swaggerAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
     `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
     `redirect_uri=${encodeURIComponent('https://plastic-manufacturing-api.onrender.com/api-docs/oauth2-redirect.html')}&` +
@@ -237,7 +277,6 @@ router.get('/debug-swagger-flow', (req, res) => {
     `access_type=offline&` +
     `prompt=consent`;
   
-  // URL that your app generates
   const yourAppAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
     `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
     `redirect_uri=${encodeURIComponent('https://plastic-manufacturing-api.onrender.com/auth/google/callback')}&` +
@@ -250,21 +289,16 @@ router.get('/debug-swagger-flow', (req, res) => {
     comparison: {
       swaggerFlow: {
         url: swaggerAuthUrl,
-        description: 'Swagger sends user directly to Google, uses /api-docs/oauth2-redirect.html as callback',
-        test: 'Copy this URL and test in browser'
+        description: 'Swagger sends user directly to Google',
+        callback: '/api-docs/oauth2-redirect.html'
       },
       yourAppFlow: {
         url: yourAppAuthUrl,
-        description: 'Your app uses Passport, uses /auth/google/callback as callback',
-        test: 'Visit /auth/google to trigger this flow'
+        description: 'Your app uses Passport',
+        callback: '/auth/google/callback'
       }
     },
-    requiredGoogleConsoleUris: [
-      'https://plastic-manufacturing-api.onrender.com/auth/google/callback',
-      'https://plastic-manufacturing-api.onrender.com/api-docs/oauth2-redirect.html',
-      'http://localhost:3000/auth/google/callback'
-    ],
-    note: 'Swagger needs the second URI (/api-docs/oauth2-redirect.html) in Google Console'
+    note: 'Swagger OAuth requires /api-docs/oauth2-redirect.html in Google Console'
   });
 });
 
@@ -276,7 +310,6 @@ router.get('/debug-swagger-flow', (req, res) => {
  *     tags: [Authentication]
  */
 router.get('/debug-session', (req, res) => {
-  // Test session functionality
   req.session.debugVisit = (req.session.debugVisit || 0) + 1;
   req.session.debugTime = new Date().toISOString();
   
@@ -288,7 +321,11 @@ router.get('/debug-session', (req, res) => {
       debugVisit: req.session.debugVisit,
       debugTime: req.session.debugTime,
       authenticated: req.isAuthenticated(),
-      user: req.user,
+      user: req.user ? {
+        id: req.user.id,
+        name: req.user.displayName,
+        email: req.user.emails?.[0]?.value
+      } : null,
       cookies: req.headers.cookie,
       secure: req.secure,
       host: req.get('host'),
@@ -316,9 +353,9 @@ router.get('/debug-passport', (req, res) => {
       name: strategy.name,
       scope: strategy._scope,
       callbackURL: strategy._callbackURL,
-      clientId: strategy._oauth2?._clientId,
-      clientSecret: strategy._oauth2?._clientSecret ? 'Set' : 'Not set'
-    } : 'No Google strategy found',
+      clientId: strategy._oauth2?._clientId?.substring(0, 20) + '...',
+      hasClientSecret: !!strategy._oauth2?._clientSecret
+    } : null,
     environment: {
       hasClientId: !!process.env.GOOGLE_CLIENT_ID,
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
@@ -329,7 +366,12 @@ router.get('/debug-passport', (req, res) => {
       id: req.sessionID,
       exists: !!req.session,
       authenticated: req.isAuthenticated()
-    }
+    },
+    user: req.isAuthenticated() ? {
+      id: req.user.id,
+      name: req.user.displayName,
+      email: req.user.emails?.[0]?.value
+    } : null
   };
   
   console.log('🔐 Passport debug:', debugInfo);
@@ -344,7 +386,6 @@ router.get('/debug-passport', (req, res) => {
  *     tags: [Authentication]
  */
 router.get('/test-manual-oauth', (req, res) => {
-  // Generate the exact URL that should work
   const manualUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
     `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
     `redirect_uri=${encodeURIComponent('https://plastic-manufacturing-api.onrender.com/auth/google/callback')}&` +
@@ -354,16 +395,15 @@ router.get('/test-manual-oauth', (req, res) => {
     `prompt=consent`;
   
   res.json({
-    message: 'Test this URL in browser to bypass Passport',
+    message: 'Test this URL to bypass Passport (direct Google OAuth)',
     url: manualUrl,
     instructions: [
-      '1. Copy the URL above',
-      '2. Paste in a new browser tab',
-      '3. Grant permissions',
-      '4. You should be redirected to /auth/google/callback',
-      '5. Check /auth/status to see if authenticated'
+      '1. Copy URL and paste in new browser tab',
+      '2. Grant Google permissions',
+      '3. You will be redirected to /auth/google/callback',
+      '4. Check /auth/status to verify authentication'
     ],
-    expectedBehavior: 'If this works but /auth/google doesn\'t, Passport has an issue'
+    note: 'If this works but /auth/google doesn\'t, Passport has an issue'
   });
 });
 
@@ -382,11 +422,102 @@ router.get('/clear-session', (req, res) => {
       return res.status(500).json({ error: 'Failed to clear session' });
     }
     
+    // Clear the cookie
+    res.clearCookie('plastic-manufacturing.sid');
+    
     res.json({
       message: 'Session cleared',
       oldSessionId: oldSessionId,
       newSessionId: req.sessionID,
       note: 'Refresh page to get new session'
+    });
+  });
+});
+
+/**
+ * @swagger
+ * /auth/force-logout:
+ *   get:
+ *     summary: Force logout (alternative method)
+ *     tags: [Authentication]
+ */
+router.get('/force-logout', (req, res) => {
+  console.log('🔄 Force logout requested');
+  
+  // Alternative logout method
+  req.session.regenerate((err) => {
+    if (err) {
+      console.error('Session regenerate error:', err);
+      return res.status(500).json({ error: 'Force logout failed' });
+    }
+    
+    res.clearCookie('plastic-manufacturing.sid');
+    
+    res.json({
+      message: 'Force logout successful',
+      authenticated: false,
+      note: 'Session completely regenerated'
+    });
+  });
+});
+
+/**
+ * @swagger
+ * /auth/health-check:
+ *   get:
+ *     summary: Authentication health check
+ *     tags: [Authentication]
+ */
+router.get('/health-check', (req, res) => {
+  const strategy = passport._strategies.google;
+  
+  res.json({
+    status: 'Authentication System Health Check',
+    timestamp: new Date().toISOString(),
+    components: {
+      passport: {
+        googleStrategy: !!strategy,
+        status: strategy ? 'Configured' : 'Missing'
+      },
+      session: {
+        id: req.sessionID,
+        working: !!req.session,
+        authenticated: req.isAuthenticated()
+      },
+      environment: {
+        clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Missing',
+        callbackUrl: process.env.GOOGLE_CALLBACK_URL,
+        nodeEnv: process.env.NODE_ENV
+      }
+    },
+    endpoints: {
+      login: '/auth/google',
+      logout: '/auth/logout',
+      status: '/auth/status',
+      success: '/auth/success',
+      failure: '/auth/failure'
+    },
+    instructions: 'Visit /auth/google to authenticate, /auth/logout to logout'
+  });
+});
+
+/**
+ * @swagger
+ * /auth/simple-logout:
+ *   get:
+ *     summary: Simple logout (minimal)
+ *     tags: [Authentication]
+ */
+router.get('/simple-logout', (req, res) => {
+  // Minimal logout for testing
+  req.logout(() => {
+    req.session.userId = null;
+    req.session.save(() => {
+      res.json({
+        message: 'Simple logout successful',
+        authenticated: false,
+        timestamp: new Date().toISOString()
+      });
     });
   });
 });
