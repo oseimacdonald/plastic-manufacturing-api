@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { isAuthenticated } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -89,6 +90,8 @@ let employees = [
  *   get:
  *     summary: Get all employees
  *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
  *     responses:
  *       200:
  *         description: List of all employees
@@ -98,10 +101,12 @@ let employees = [
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/Employee'
+ *       401:
+ *         description: Unauthorized - Authentication required
  *       500:
  *         description: Server error
  */
-router.get('/', async (req, res) => {
+router.get('/', isAuthenticated, async (req, res) => {
   try {
     res.json(employees);
   } catch (error) {
@@ -119,6 +124,8 @@ router.get('/', async (req, res) => {
  *   get:
  *     summary: Get active employees
  *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
  *     responses:
  *       200:
  *         description: List of active employees
@@ -128,10 +135,12 @@ router.get('/', async (req, res) => {
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/Employee'
+ *       401:
+ *         description: Unauthorized - Authentication required
  *       500:
  *         description: Server error
  */
-router.get('/active', async (req, res) => {
+router.get('/active', isAuthenticated, async (req, res) => {
   try {
     const activeEmployees = employees.filter(emp => emp.status === 'active');
     res.json(activeEmployees);
@@ -150,6 +159,8 @@ router.get('/active', async (req, res) => {
  *   get:
  *     summary: Get employee by ID
  *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -166,12 +177,14 @@ router.get('/active', async (req, res) => {
  *               $ref: '#/components/schemas/Employee'
  *       400:
  *         description: Invalid ID
+ *       401:
+ *         description: Unauthorized - Authentication required
  *       404:
  *         description: Employee not found
  *       500:
  *         description: Server error
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', isAuthenticated, async (req, res) => {
   try {
     const id = req.params.id;
     
@@ -211,6 +224,8 @@ router.get('/:id', async (req, res) => {
  *   post:
  *     summary: Create a new employee
  *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
  *     requestBody:
  *       required: true
  *       content:
@@ -222,10 +237,12 @@ router.get('/:id', async (req, res) => {
  *         description: Employee created successfully
  *       400:
  *         description: Bad request - validation error
+ *       401:
+ *         description: Unauthorized - Authentication required
  *       500:
  *         description: Server error
  */
-router.post('/', async (req, res) => {
+router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { employeeId, name, email } = req.body;
     
@@ -283,6 +300,188 @@ router.post('/', async (req, res) => {
     console.error('Error creating employee:', error);
     res.status(500).json({ 
       error: 'Failed to create employee',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /employees/{id}:
+ *   put:
+ *     summary: Update an employee
+ *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Employee ID or employeeId
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/Employee'
+ *     responses:
+ *       200:
+ *         description: Employee updated successfully
+ *       400:
+ *         description: Bad request - validation error
+ *       401:
+ *         description: Unauthorized - Authentication required
+ *       404:
+ *         description: Employee not found
+ *       500:
+ *         description: Server error
+ */
+router.put('/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = req.params.id;
+    
+    // Check for empty ID
+    if (!id || id.trim() === '') {
+      return res.status(400).json({ 
+        error: 'Invalid ID',
+        message: 'Employee ID cannot be empty' 
+      });
+    }
+    
+    // Find employee by ID or employeeId
+    const index = employees.findIndex(emp => 
+      emp.id === id || emp.employeeId === id
+    );
+    
+    if (index === -1) {
+      return res.status(404).json({ 
+        error: 'Employee not found',
+        message: `No employee found with ID: ${id}` 
+      });
+    }
+    
+    const { employeeId, name, email, status } = req.body;
+    const employee = employees[index];
+    
+    // Validate required fields if provided
+    if (employeeId && employeeId !== employee.employeeId) {
+      // Check if new employeeId already exists
+      const existingEmployee = employees.find(emp => 
+        emp.employeeId === employeeId && emp.id !== employee.id
+      );
+      if (existingEmployee) {
+        return res.status(400).json({ 
+          error: 'Duplicate employee ID',
+          message: `Employee with ID ${employeeId} already exists` 
+        });
+      }
+    }
+    
+    // Validate email format if provided
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ 
+          error: 'Invalid email format',
+          message: 'Please provide a valid email address' 
+        });
+      }
+    }
+    
+    // Validate status if provided
+    if (status && !['active', 'on_leave', 'terminated'].includes(status)) {
+      return res.status(400).json({ 
+        error: 'Invalid status',
+        message: 'Status must be one of: active, on_leave, terminated' 
+      });
+    }
+    
+    // Update employee (merge existing with new data)
+    employees[index] = {
+      ...employee,
+      ...req.body,
+      // Preserve ID if not explicitly changed
+      id: employee.id,
+      employeeId: employeeId || employee.employeeId
+    };
+    
+    res.json(employees[index]);
+  } catch (error) {
+    console.error('Error updating employee:', error);
+    res.status(500).json({ 
+      error: 'Failed to update employee',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /employees/{id}:
+ *   delete:
+ *     summary: Delete an employee
+ *     tags: [Employees]
+ *     security:
+ *       - OAuth2: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: Employee ID or employeeId
+ *     responses:
+ *       200:
+ *         description: Employee deleted successfully
+ *       400:
+ *         description: Invalid ID
+ *       401:
+ *         description: Unauthorized - Authentication required
+ *       404:
+ *         description: Employee not found
+ *       500:
+ *         description: Server error
+ */
+router.delete('/:id', isAuthenticated, async (req, res) => {
+  try {
+    const id = req.params.id;
+    
+    // Check for empty ID
+    if (!id || id.trim() === '') {
+      return res.status(400).json({ 
+        error: 'Invalid ID',
+        message: 'Employee ID cannot be empty' 
+      });
+    }
+    
+    // Find employee index by ID or employeeId
+    const index = employees.findIndex(emp => 
+      emp.id === id || emp.employeeId === id
+    );
+    
+    if (index === -1) {
+      return res.status(404).json({ 
+        error: 'Employee not found',
+        message: `No employee found with ID: ${id}` 
+      });
+    }
+    
+    // Store deleted employee for response
+    const deletedEmployee = employees[index];
+    
+    // Remove employee from array
+    employees.splice(index, 1);
+    
+    res.json({ 
+      message: 'Employee deleted successfully',
+      employee: deletedEmployee 
+    });
+  } catch (error) {
+    console.error('Error deleting employee:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete employee',
       message: error.message 
     });
   }

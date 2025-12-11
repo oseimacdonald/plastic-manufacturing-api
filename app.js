@@ -113,43 +113,10 @@ try {
   const employeeRoutes = require('./routes/employees');
   const qualityCheckRoutes = require('./routes/qualityChecks');
   
-  // Create a simple authentication middleware if the real one doesn't exist
-  let isAuthenticated;
-  try {
-    const authMiddleware = require('./middleware/auth');
-    isAuthenticated = authMiddleware.isAuthenticated;
-  } catch {
-    // Fallback middleware if auth middleware doesn't exist
-    isAuthenticated = (req, res, next) => {
-      console.warn('Using fallback authentication - all requests allowed');
-      next();
-    };
-  }
-  
-  // In test mode, check for test auth header first
-  const testAuthMiddleware = (req, res, next) => {
-    if (process.env.NODE_ENV === 'test') {
-      // If test header says authenticated, skip real auth
-      if (req.headers['x-test-auth'] === 'true') {
-        console.log('Test mode: Skipping authentication');
-        return next();
-      }
-      // If test header says unauthenticated, return 401
-      if (req.headers['x-test-auth'] === 'false') {
-        return res.status(401).json({ 
-          error: 'Unauthorized',
-          message: 'Authentication required to access this resource'
-        });
-      }
-    }
-    // Otherwise use real authentication
-    return isAuthenticated(req, res, next);
-  };
-  
-  // Apply routes with authentication (with test mode support)
-  app.use('/employees', testAuthMiddleware, employeeRoutes);
-  app.use('/quality-checks', testAuthMiddleware, qualityCheckRoutes);
-  console.log('Employee and Quality Check routes loaded');
+  // Apply routes WITHOUT additional middleware (authentication is in route files)
+  app.use('/employees', employeeRoutes);
+  app.use('/quality-checks', qualityCheckRoutes);
+  console.log('Employee and Quality Check routes loaded (authentication handled in routes)');
 } catch (error) {
   console.warn('Employee/Quality Check routes not found:', error.message);
 }
@@ -185,6 +152,8 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`  - GET  /employees     - List all employees (protected)`);
     console.log(`  - GET  /quality-checks - List all quality checks (protected)`);
     console.log(`  - GET  /api-docs      - API documentation`);
+    console.log(`  - GET  /auth/google   - OAuth login`);
+    console.log(`  - GET  /auth/logout   - Logout`);
   });
 }
 

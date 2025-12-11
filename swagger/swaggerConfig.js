@@ -22,6 +22,28 @@ const options = {
         description: 'Development server'
       }
     ],
+    components: {
+      securitySchemes: {
+        OAuth2: {
+          type: 'oauth2',
+          flows: {
+            authorizationCode: {
+              authorizationUrl: 'https://accounts.google.com/o/oauth2/auth',
+              tokenUrl: 'https://oauth2.googleapis.com/token',
+              scopes: {
+                'profile': 'Access to your profile information',
+                'email': 'Access to your email address'
+              }
+            }
+          }
+        }
+      }
+    },
+    security: [
+      {
+        OAuth2: ['profile', 'email']
+      }
+    ]
   },
   apis: ['./routes/*.js'],
 };
