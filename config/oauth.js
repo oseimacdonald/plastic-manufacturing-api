@@ -17,11 +17,12 @@ module.exports = function (app) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Configure Google OAuth Strategy
+  // Configure Google OAuth Strategy - WITH SCOPE ADDED
   passport.use(new GoogleStrategy({
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL || '/auth/google/callback'
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || '/auth/google/callback',
+      scope: ['profile', 'email']  // ← THIS LINE FIXES THE ERROR
     },
     function (accessToken, refreshToken, profile, done) {
       // Here you would typically find or create a user in your database

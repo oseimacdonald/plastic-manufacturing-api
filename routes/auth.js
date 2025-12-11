@@ -14,7 +14,11 @@ const passport = require('passport');
  *         description: Redirects to Google OAuth consent screen
  */
 router.get('/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
+  passport.authenticate('google', { 
+    scope: ['profile', 'email'],
+    prompt: 'select_account',  // Forces account selection screen
+    access_type: 'offline'     // Gets refresh token
+  })
 );
 
 /**
@@ -29,9 +33,13 @@ router.get('/google',
  *         description: Redirects to home page on success, or login page on failure
  */
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: '/auth/failure' }),
+  passport.authenticate('google', { 
+    failureRedirect: '/auth/failure',
+    failureMessage: true  // Passes error messages to session
+  }),
   (req, res) => {
     // Successful authentication
+    console.log('User authenticated:', req.user?.id);
     res.redirect('/auth/success');
   }
 );
@@ -66,7 +74,8 @@ router.get('/success', (req, res) => {
         id: req.user.id,
         displayName: req.user.displayName,
         email: req.user.emails?.[0]?.value,
-        provider: req.user.provider
+        provider: req.user.provider,
+        photos: req.user.photos?.[0]?.value
       },
       authenticated: true
     });
@@ -90,8 +99,11 @@ router.get('/success', (req, res) => {
  *         description: Authentication failed
  */
 router.get('/failure', (req, res) => {
+  const error = req.session.messages?.[0] || 'Authentication failed';
+  
   res.status(401).json({
-    message: 'Authentication failed',
+    message: error,
+    error: 'Google OAuth authentication failed',
     authenticated: false
   });
 });
@@ -110,7 +122,10 @@ router.get('/failure', (req, res) => {
 router.get('/logout', (req, res) => {
   req.logout((err) => {
     if (err) {
-      return res.status(500).json({ error: 'Logout failed' });
+      return res.status(500).json({ 
+        error: 'Logout failed',
+        details: err.message 
+      });
     }
     req.session.destroy();
     res.json({
@@ -139,8 +154,33 @@ router.get('/status', (req, res) => {
       displayName: req.user.displayName,
       email: req.user.emails?.[0]?.value,
       provider: req.user.provider
-    } : null
+    } : null,
+    timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * @swagger
+ * /auth/debug:
+ *   get:
+ *     summary: Debug OAuth configuration
+ *     description: Returns current OAuth configuration for debugging
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Debug information
+ */
+router.get('/debug', (req, res) => {
+  const googleStrategy = passport._strategies.google;
+  const config = {
+    hasGoogleStrategy: !!googleStrategy,
+    clientIdConfigured: !!process.env.GOOGLE_CLIENT_ID,
+    callbackUrl: process.env.GOOGLE_CALLBACK_URL,
+    scope: googleStrategy?._scope || 'Not configured',
+    sessionId: req.sessionID
+  };
+  
+  res.json(config);
 });
 
 module.exports = router;
