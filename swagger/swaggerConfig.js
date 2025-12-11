@@ -6,14 +6,7 @@ const options = {
     info: {
       title: 'Plastic Manufacturing API',
       version: '1.0.0',
-      description: `API for injection machine production reporting system
-
-## Authentication Instructions:
-1. Visit \`/auth/google\` to authenticate with Google
-2. After authentication, your session will be active
-3. Use the endpoints below
-
-Do NOT use the "Authorize" button in Swagger UI.`,
+      description: 'API for injection machine production reporting system',
       contact: {
         name: 'API Support',
         email: 'support@plasticmanufacturing.com'
@@ -28,8 +21,33 @@ Do NOT use the "Authorize" button in Swagger UI.`,
         url: 'http://localhost:3000',
         description: 'Development server'
       }
+    ],
+    components: {
+      securitySchemes: {
+        // CHANGED: Use your actual Google OAuth endpoint, not Google's directly
+        googleOAuth2: {
+          type: 'oauth2',
+          flows: {
+            authorizationCode: {
+              // CHANGED: Use YOUR app's auth endpoint
+              authorizationUrl: 'https://plastic-manufacturing-api.onrender.com/auth/google',
+              // CHANGED: Use Google's token endpoint for token exchange
+              tokenUrl: 'https://accounts.google.com/o/oauth2/token',
+              scopes: {
+                'profile': 'Access to your profile information',
+                'email': 'Access to your email address'
+              }
+            }
+          }
+        }
+      }
+    },
+    security: [
+      {
+        // CHANGED: Match the security scheme name
+        googleOAuth2: ['profile', 'email']
+      }
     ]
-    // No securitySchemes - this prevents OAuth buttons
   },
   apis: ['./routes/*.js'],
 };
