@@ -24,12 +24,15 @@ const options = {
     ],
     components: {
       securitySchemes: {
-        OAuth2: {
+        // CHANGED: Use your actual Google OAuth endpoint, not Google's directly
+        googleOAuth2: {
           type: 'oauth2',
           flows: {
             authorizationCode: {
-              authorizationUrl: 'https://accounts.google.com/o/oauth2/auth',
-              tokenUrl: 'https://oauth2.googleapis.com/token',
+              // CHANGED: Use YOUR app's auth endpoint
+              authorizationUrl: 'https://plastic-manufacturing-api.onrender.com/auth/google',
+              // CHANGED: Use Google's token endpoint for token exchange
+              tokenUrl: 'https://accounts.google.com/o/oauth2/token',
               scopes: {
                 'profile': 'Access to your profile information',
                 'email': 'Access to your email address'
@@ -41,7 +44,8 @@ const options = {
     },
     security: [
       {
-        OAuth2: ['profile', 'email']
+        // CHANGED: Match the security scheme name
+        googleOAuth2: ['profile', 'email']
       }
     ]
   },
