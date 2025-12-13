@@ -24,11 +24,40 @@ const Machine = require('../models/machine');
  *         status:
  *           type: string
  *           enum: [operational, maintenance, down, idle]
+ *           default: operational
  *           description: Current machine status
+ *         location:
+ *           type: string
+ *           description: Physical location of the machine
+ *         manufacturer:
+ *           type: string
+ *           description: Machine manufacturer
+ *         installationDate:
+ *           type: string
+ *           format: date
+ *           description: Date when machine was installed
+ *         lastMaintenance:
+ *           type: string
+ *           format: date
+ *           description: Date of last maintenance
+ *         nextMaintenance:
+ *           type: string
+ *           format: date
+ *           description: Scheduled next maintenance date
+ *         operatorNotes:
+ *           type: string
+ *           maxLength: 500
+ *           description: Additional operator notes
  *       example:
  *         machineId: "IM-001"
  *         name: "Toshiba 350T"
  *         status: "operational"
+ *         location: "Production Line A"
+ *         manufacturer: "Toshiba"
+ *         installationDate: "2023-01-15"
+ *         lastMaintenance: "2024-03-01"
+ *         nextMaintenance: "2024-06-01"
+ *         operatorNotes: "Running smoothly"
  */
 
 /**
@@ -52,9 +81,13 @@ const Machine = require('../models/machine');
 router.get('/', async (req, res) => {
   try {
     const machines = await Machine.find();
-    res.json(machines);
+    res.status(200).json(machines);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching machines:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch machines',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -70,7 +103,7 @@ router.get('/', async (req, res) => {
  *         schema:
  *           type: string
  *         required: true
- *         description: Machine ID
+ *         description: Machine MongoDB ID
  *     responses:
  *       200:
  *         description: Machine data
@@ -78,6 +111,8 @@ router.get('/', async (req, res) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Machine'
+ *       400:
+ *         description: Invalid ID format
  *       404:
  *         description: Machine not found
  *       500:
@@ -85,13 +120,28 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
+    // Validate MongoDB ID format
+    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ 
+        error: 'Invalid ID format',
+        message: 'Please provide a valid MongoDB ID (24 character hex string)' 
+      });
+    }
+    
     const machine = await Machine.findById(req.params.id);
     if (!machine) {
-      return res.status(404).json({ error: 'Machine not found' });
+      return res.status(404).json({ 
+        error: 'Machine not found',
+        message: `No machine found with ID: ${req.params.id}` 
+      });
     }
-    res.json(machine);
+    res.status(200).json(machine);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching machine:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch machine',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -121,14 +171,75 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
+    const { machineId, name } = req.body;
+    
+    // Validate required fields
+    if (!machineId || !name) {
+      const missingFields = [];
+      if (!machineId) missingFields.push('machineId');
+      if (!name) missingFields.push('name');
+      
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        missing: missingFields,
+        required: ['machineId', 'name'],
+        received: { machineId, name }
+      });
+    }
+    
+    // Validate machineId format (alphanumeric with hyphens)
+    const machineIdRegex = /^[A-Z0-9-]+$/;
+    if (!machineIdRegex.test(machineId)) {
+      return res.status(400).json({ 
+        error: 'Invalid machine ID format',
+        message: 'Machine ID must contain only uppercase letters, numbers, and hyphens'
+      });
+    }
+    
+    // Validate name length
+    if (name.length < 2) {
+      return res.status(400).json({ 
+        error: 'Invalid machine name',
+        message: 'Machine name must be at least 2 characters long'
+      });
+    }
+    
+    // Validate status if provided
+    if (req.body.status && !['operational', 'maintenance', 'down', 'idle'].includes(req.body.status)) {
+      return res.status(400).json({ 
+        error: 'Invalid status',
+        message: 'Status must be one of: operational, maintenance, down, idle'
+      });
+    }
+    
     const machine = new Machine(req.body);
     await machine.save();
     res.status(201).json(machine);
   } catch (error) {
+    console.error('Error creating machine:', error);
+    
     if (error.code === 11000) {
-      return res.status(400).json({ error: 'Machine ID already exists' });
+      return res.status(400).json({ 
+        error: 'Duplicate entry',
+        message: 'Machine ID already exists',
+        field: error.keyValue
+      });
     }
-    res.status(400).json({ error: error.message });
+    
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }))
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create machine',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -144,7 +255,7 @@ router.post('/', async (req, res) => {
  *         schema:
  *           type: string
  *         required: true
- *         description: Machine ID
+ *         description: Machine MongoDB ID
  *     requestBody:
  *       required: true
  *       content:
@@ -158,24 +269,101 @@ router.post('/', async (req, res) => {
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Machine'
+ *       400:
+ *         description: Bad request - validation error
  *       404:
  *         description: Machine not found
- *       400:
- *         description: Bad request
+ *       500:
+ *         description: Server error
  */
 router.put('/:id', async (req, res) => {
   try {
+    // Validate MongoDB ID format
+    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ 
+        error: 'Invalid ID format',
+        message: 'Please provide a valid MongoDB ID (24 character hex string)' 
+      });
+    }
+    
+    // Validate request body is not empty
+    if (Object.keys(req.body).length === 0) {
+      return res.status(400).json({ 
+        error: 'Empty request body',
+        message: 'No data provided for update' 
+      });
+    }
+    
+    // Validate machineId format if being updated
+    if (req.body.machineId) {
+      const machineIdRegex = /^[A-Z0-9-]+$/;
+      if (!machineIdRegex.test(req.body.machineId)) {
+        return res.status(400).json({ 
+          error: 'Invalid machine ID format',
+          message: 'Machine ID must contain only uppercase letters, numbers, and hyphens'
+        });
+      }
+    }
+    
+    // Validate name if being updated
+    if (req.body.name && req.body.name.length < 2) {
+      return res.status(400).json({ 
+        error: 'Invalid machine name',
+        message: 'Machine name must be at least 2 characters long'
+      });
+    }
+    
+    // Validate status if provided
+    if (req.body.status && !['operational', 'maintenance', 'down', 'idle'].includes(req.body.status)) {
+      return res.status(400).json({ 
+        error: 'Invalid status',
+        message: 'Status must be one of: operational, maintenance, down, idle'
+      });
+    }
+    
     const machine = await Machine.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true, runValidators: true }
+      { 
+        new: true, 
+        runValidators: true,
+        context: 'query'
+      }
     );
+    
     if (!machine) {
-      return res.status(404).json({ error: 'Machine not found' });
+      return res.status(404).json({ 
+        error: 'Machine not found',
+        message: `No machine found with ID: ${req.params.id}` 
+      });
     }
-    res.json(machine);
+    
+    res.status(200).json(machine);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error('Error updating machine:', error);
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        error: 'Duplicate entry',
+        message: 'Machine ID already exists',
+        field: error.keyValue
+      });
+    }
+    
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: 'Validation failed',
+        details: Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }))
+      });
+    }
+    
+    res.status(400).json({ 
+      error: 'Failed to update machine',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
@@ -191,10 +379,12 @@ router.put('/:id', async (req, res) => {
  *         schema:
  *           type: string
  *         required: true
- *         description: Machine ID
+ *         description: Machine MongoDB ID
  *     responses:
  *       200:
  *         description: Machine deleted successfully
+ *       400:
+ *         description: Invalid ID format
  *       404:
  *         description: Machine not found
  *       500:
@@ -202,14 +392,38 @@ router.put('/:id', async (req, res) => {
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const machine = await Machine.findByIdAndDelete(req.params.id);
-    if (!machine) {
-      return res.status(404).json({ error: 'Machine not found' });
+    // Validate MongoDB ID format
+    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ 
+        error: 'Invalid ID format',
+        message: 'Please provide a valid MongoDB ID (24 character hex string)' 
+      });
     }
-    res.json({ message: 'Machine deleted successfully' });
+    
+    const machine = await Machine.findByIdAndDelete(req.params.id);
+    
+    if (!machine) {
+      return res.status(404).json({ 
+        error: 'Machine not found',
+        message: `No machine found with ID: ${req.params.id}` 
+      });
+    }
+    
+    res.status(200).json({ 
+      message: 'Machine deleted successfully',
+      deletedMachine: {
+        id: machine._id,
+        machineId: machine.machineId,
+        name: machine.name
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting machine:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete machine',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
-module.exports = router; 
+module.exports = router;
